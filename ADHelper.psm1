@@ -1,4 +1,4 @@
-﻿# Get number of enabled users, enabled computers and member groups of AD groups.
+# Get number of enabled users, enabled computers and member groups of AD groups.
 function Get-ADGroupEnabledCount
 {
     [CmdletBinding()]
@@ -85,6 +85,40 @@ function Get-AllADGroups
     }
 
     return $Groups
+
+}
+
+function Get-NestedGroups
+{
+    [CmdletBinding()]
+    Param (
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)]
+    [object] $Group
+    )
+
+    begin {
+        $listReturn = New-Object Collections.Generic.List[Object]
+    }
+
+    process {
+        $memberGroups = Get-ADGroupMember -Identity $Group | where {$_.objectClass -eq 'group'}
+
+        foreach($member in $memberGroups)
+        {
+            $objGroup = [pscustomobject] @{
+                Group = $Group.Name
+                Member = $member.Name
+           }
+
+           $listReturn.Add($objGroup)
+       }
+
+
+    }
+
+    end {
+        return $listReturn
+    }
 
 }
 
@@ -255,6 +289,78 @@ function Get-GPLinks
 
 }
 
+function GEt-AllGPOsReport
+{
+    [CmdletBinding()]
+    Param (
+    [parameter(Mandatory=$true)]
+    [string] $ExportPath,
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)]
+    [object] $Domain,
+    [parameter(Mandatory=$true)]
+    [ValidateSet("Html","Xml")]
+    [string] $ReportType,
+    [parameter(Mandatory=$false)]
+    [switch] $ShowDisabled = $false
+    )
+
+    # Process the domain root GPOs
+    $strFolderPath = $ExportPath + '\' + $Domain.DNSRoot
+    $arrGPOs = Get-GPLinks -DistinguishedName $Domain.DistinguishedName
+
+    if($arrGPOs -ne $null)
+    {
+         If((Test-Path $strFolderPath) -ne $true)
+         {
+            Write-Host "Creating Path $strFolderPath" -ForegroundColor Cyan
+            $null = (New-Item -ItemType Directory -Path $strFolderPath)
+         }
+         foreach($objGPO in $arrGPOs)
+         {
+            $strDisplay = $objGPO.DisplayName
+            if($objGPO.Enforced -eq $true) { $strDisplay = 'ENF-' + $strDisplay}
+            if($objGPO.Enabled -ne $true) { $strDisplay = 'DIS-' + $strDisplay}
+            $strExport = "$strFolderPath\$($strDisplay).html"
+            $strExport = $strExport.Replace('/',' ')
+            Write-Host "Exporting Report for $($objGPO.DisplayName) to $strExport" -ForegroundColor Green
+            Get-GPOReport -Guid $objGPO.GPOId -ReportType $ReportType -Path $strExport
+         }
+    }
+
+    # Process all organizational units in the domain
+    $ADOUs = Get-ADOrganizationalUnit -SearchBase $Domain.DistinguishedName -Filter * -Properties canonicalName
+
+    foreach($objOU in $ADOUs)
+    {
+        $strFolderPath = $ExportPath + '\' + $objOU.canonicalName.replace('/','\')
+        $arrGPOs = Get-GPLinks -DistinguishedName $objOU.DistinguishedName
+
+        if($arrGPOs -ne $null)
+        {
+            If((Test-Path $strFolderPath) -ne $true)
+            {
+                Write-Host "Creating Path $strFolderPath" -ForegroundColor Cyan
+                $null = (New-Item -ItemType Directory -Path $strFolderPath)
+            }
+
+            foreach($objGPO in $arrGPOs)
+            {
+                if($objGPO.Enabled -eq $true -or $ShowDisabled -eq $true)
+                {
+                    $strDisplay = $objGPO.DisplayName
+                    if($objGPO.Enforced -eq $true) { $strDisplay = 'ENF-' + $strDisplay}
+                    if($objGPO.Enabled -ne $true) { $strDisplay = 'DIS-' + $strDisplay}
+                    $strExport = "$strFolderPath\$($strDisplay).html"
+                    $strExport = $strExport.Replace('/',' ')
+                    Write-Host "Exporting Report for $($objGPO.DisplayName) to $strExport" -ForegroundColor Green
+                    Get-GPOReport -Guid $objGPO.GPOId -ReportType $ReportType -Path $strExport
+                }
+            }
+        
+        }
+    }
+}
+
 function Copy-ADUser
 {
     [CmdletBinding()]
@@ -275,11 +381,307 @@ function Copy-ADUser
 
 }
 
+function New-ADOUPath
+{
+    [CmdletBinding()]
+    Param (
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)]
+    [object] $OrganizationalUnit
+    )
+
+    # Map Active Directory to PS Drive
+    if (-not (Get-PSDrive -Name 'AD' -ErrorAction Silent)) {
+        Throw [System.Management.Automation.DriveNotFoundException] "$($Error[0]) You're likely using an older version of Windows ($([System.Environment]::OSVersion.Version)) where the 'AD:' PSDrive isn't supported."
+    }
+
+
+}
+
+function Get-ADAllOUParents
+{
+    [CmdletBinding()]
+    Param (
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)]
+    [object] $OrganizationalUnit
+    )
+
+
+}
+
+function Get-DomainGPOReport
+{
+
+    [CmdletBinding()]
+    Param (
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)]
+    [string] $strDomain,
+    [parameter(Mandatory=$true)]
+    [string] $strExportFolderPath
+    )
+
+    $ADOUs = Get-ADOrganizationalUnit -SearchBase $strDomain -Filter * -Properties canonicalName
+
+    $objDom = Get-ADDomain -Identity $strDomain
+    $strFolderPath = $strExportFolderPath + '\' + $objDom.DNSRoot
+    $arrGPOs = Get-GPLinks -DistinguishedName $strDomain
+
+    if($arrGPOs -ne $null)
+    {
+         If((Test-Path $strFolderPath) -ne $true)
+         {
+            Write-Host "Creating Path $strFolderPath" -ForegroundColor Cyan
+            $null = (New-Item -ItemType Directory -Path $strFolderPath)
+         }
+         foreach($objGPO in $arrGPOs)
+         {
+            $strDisplay = $objGPO.DisplayName
+            if($objGPO.Enforced -eq $true) { $strDisplay = 'ENF-' + $strDisplay}
+            if($objGPO.Enabled -ne $true) { $strDisplay = 'DIS-' + $strDisplay}
+            $strExport = "$strFolderPath\$($strDisplay).html"
+            $strExport = $strExport.Replace('/',' ')
+            Write-Host "Exporting Report for $($objGPO.DisplayName) to $strExport" -ForegroundColor Green
+            Get-GPOReport -Guid $objGPO.GPOId -ReportType 'Html' -Path $strExport
+         }
+    }
+
+    foreach($objOU in $ADOUs)
+    {
+        $strFolderPath = $strExportFolderPath + '\' + $objOU.canonicalName.replace('/','\')
+        $arrGPOs = Get-GPLinks -DistinguishedName $objOU.DistinguishedName
+
+        if($arrGPOs -ne $null)
+        {
+            If((Test-Path $strFolderPath) -ne $true)
+            {
+                Write-Host "Creating Path $strFolderPath" -ForegroundColor Cyan
+                $null = (New-Item -ItemType Directory -Path $strFolderPath)
+            }
+
+            foreach($objGPO in $arrGPOs)
+            {
+                $strDisplay = $objGPO.DisplayName
+                if($objGPO.Enforced -eq $true) { $strDisplay = 'ENF-' + $strDisplay}
+                if($objGPO.Enabled -ne $true) { $strDisplay = 'DIS-' + $strDisplay}
+                $strExport = "$strFolderPath\$($strDisplay).html"
+                $strExport = $strExport.Replace('/',' ')
+                Write-Host "Exporting Report for $($objGPO.DisplayName) to $strExport" -ForegroundColor Green
+                Get-GPOReport -Guid $objGPO.GPOId -ReportType 'Html' -Path $strExport
+            }
+        
+        }
+    }
+}
+
+function Get-AllADReplicationSites
+{
+
+    $ADSites = @{}
+
+    $AllSites = Get-ADReplicationSite -Filter *
+
+    foreach($ADSite in $AllSites)
+    {
+            $NewSite = [PSCustomObject]@{
+            id = $ADSite.ObjectGUID
+            name = $ADSite.Name
+            fill = $contentFill
+            stroke = $contentStroke
+            shape = $contentShape
+            refs = @()
+        }
+
+        $ADSites.Add($NewSite.id,$NewSite)
+    }
+
+    return $ADSites
+
+}
+
+function Get-ADSiteReplicationTree
+{
+    [CmdletBinding()]
+    Param (
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)]
+    [object] $Site,
+    [parameter(Mandatory=$true)]
+    [hashtable] $SiteList,
+    [parameter(Mandatory=$true)]
+    $ProcessedLinks #List object
+    )
+     
+    # Get all replication links where this site belongs to
+    $ReplicationLinks = Get-ADReplicationSiteLink -Filter "SitesIncluded -eq '$($Site.DistinguishedName)'"
+
+    # Process all the links and sites that those links connect
+    # We need to make sure we only process each link and site once, as otherwise we could create a loopback recursion.
+    foreach($Link in $ReplicationLinks)
+    {
+            # Add this link to the list of processed links. This will prevent this link from being processed multiple times (and will eventually stop the recursion when all links have been processed once).
+            $ProcessedLinks += $Link.ObjectGUID
+
+            # Go through all the sites included in this replication link
+            foreach($SiteIncluded in $Link.SitesIncluded)
+            {
+                # Only process sites that are NOT the site we retrieved the replication links from. This will prevent a loop where the site refers to itself for processing.
+                if($SiteIncluded -ne $Site.DistinguishedName)
+                {
+                    # Get details of the site
+                    $LinkedSite = Get-ADReplicationSite -Identity $SiteIncluded
+
+                    # Since we need a structure where child objects refer to parent objects, we need to check whether the site entry for the linked site contains a link to the current site.
+                    # If it does, we skip the site because this site has already been discovered. This will prevent loopbacks in the tree.
+                    if($SiteList[$LinkedSite.ObjectGUID].refs -notcontains $Site.ObjectGUID)
+                    {
+                        # Link the current site as parent of the linked site
+                        $SiteList[$LinkedSite.ObjectGUID].refs += $Site.ObjectGUID
+                        Write-Verbose "$($Site.Name) replicating to $($LinkedSite.Name)"
+
+                        # Get the replication tree from the linked site (we call ourselves recursively)
+                        Get-ADSiteReplicationTree -Site $LinkedSite -SiteList $SiteList -ProcessedLinks $ProcessedLinks
+                    }
+                }
+            }
+    }
+}
+
+function Get-ADSiteReplicationDiagram
+{
+
+    [CmdletBinding()]
+    Param (
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)]
+    [string] $OutFile
+    )
+
+
+    $ADSites = Get-AllADReplicationSites
+
+    $ProcessedLinks = New-Object System.Collections.Generic.List[string]
+
+    Add-Content $OutFile '## Hello World
+    # label: %site%
+    # style: shape=%shape%;fillColor=%fill%;strokeColor=%stroke%;
+    # namespace: csvimport-
+    # connect: {"from":"refs", "to":"id", "style": "rounded=0;endArrow=none;endFill=0;startArrow=none;startFill=0;jumpStyle=sharp;"}
+    # width: auto
+    # height: auto
+    # padding: 15
+    # ignore: id,shape,fill,stroke,refs
+    # nodespacing: 40
+    # levelspacing: 100
+    # edgespacing: 40
+    # layout: auto
+    ## CSV starts under this line'
+
+    Add-Content $OutFile "id,site,fill,stroke,shape,refs"
+
+    $contentFill = "#dae8fc"
+    $contentStroke = "#6c8ebf"
+    $contentShape = "rectangle"
+
+    $RootSite = (Get-ADReplicationSite -Filter *)[0]
+    $ListedSites += $RootSite.Name
+
+    Get-ADSiteReplicationTree -Site $RootSite -SiteList $ADSites -ProcessedLinks $ProcessedLinks
+
+    foreach($SiteID in $ADSites.Keys)
+    {
+        $id = $ADSites[$SiteID].id
+        $name = $ADSites[$SiteID].name
+        $fill = $ADSites[$SiteID].fill
+        $stroke = $ADSites[$SiteID].stroke
+        $shape = $ADSites[$SiteID].shape
+        $reflist = $ADSites[$SiteID].refs -join ','
+    
+        Add-Content $OutFile "$id,$name,$fill,$stroke,$shape,$reflist"
+    }
+
+
+}
+
+# Get all domains from the forest, some key information about them and the nearest domain controller
+function Get-ForestDomains {
+
+    $Domains = @()
+
+    $LocalSite = Get-ADReplicationSite
+    
+    $ADForest = Get-ADForest
+    
+    foreach($DNSDomain in $ADForest.Domains)
+    {
+        $ADDomain = Get-ADDomain -Identity $DNSDomain
+        $DomainController = Get-ADDomainController -SiteName $LocalSite.Name -DomainName $ADDomain.Name -ForceDiscover -NextClosestSite
+
+        $DomainObject = New-Object -TypeName PSObject
+        $DomainObject | Add-Member -Name 'DNSDomain' -MemberType NoteProperty -Value $DNSDomain
+        $DomainObject | Add-Member -Name 'DistinguishedName' -MemberType NoteProperty -Value $ADDomain.DistinguishedName
+        $DomainObject | Add-Member -Name 'NetBIOSName' -MemberType NoteProperty -Value $ADDomain.NetBIOSName
+        $DomainObject | Add-Member -Name 'DomainControllerFQDN' -MemberType NoteProperty -Value $DomainController.HostName[0]
+        $DomainObject | Add-Member -Name 'ParentDomain' -MemberType NoteProperty -Value $ADDomain.ParentDomain
+        $DomainObject | Add-Member -Name 'PDCEmulator' -MemberType NoteProperty -Value $ADDomain.PDCEmulator
+
+        $Domains += $DomainObject
+       
+    }
+
+    $Domains
+
+}
+
+# Get ADDomain object from a distinguished name
+function Get-DomainFromDN {
+    [CmdletBinding()]
+    Param (
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)]
+    [string] $ObjectDN
+    )
+
+    $DomainDN = ""
+
+    $DNArray = $ObjectDN.Split(",")
+    foreach($Element in $DNArray)
+    {
+        if($Element.Substring(0,2) -eq "DC")
+        {
+            $DomainDN += "$Element,"
+        }
+    }
+
+    # Remove the trailing comma
+    $DomainDN = $DomainDN.Substring(0,$DomainDN.Length -1)
+
+    $Domain = Get-ADDomain -Identity $DomainDN
+
+    return $Domain
+
+}
+
+# Get the ADDomain object for any AD object
+function Get-ObjectDomain {
+    [CmdletBinding()]
+    Param (
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)]
+    [object] $ADObject
+    )
+
+    return($ADObject.DistinguishedName | Get-DomainFromDN)
+}
+
 Export-ModuleMember Get-ADGroupEnabledCount
 Export-ModuleMember Get-AllADGroups
+Export-ModuleMember Get-NestedGroups
 Export-ModuleMember Get-ADObjectCountByOU
 Export-ModuleMember Get-ADObjectContainer
 Export-ModuleMember Get-ADContainerFromCN
 Export-ModuleMember Get-ADObjectDate
 Export-ModuleMember Get-GPLinks
-
+Export-ModuleMember Get-DomainGPOReport
+Export-ModuleMember New-ADOUPath
+Export-ModuleMember GEt-AllGPOsReport
+Export-ModuleMember Get-AllADReplicationSites
+Export-ModuleMember Get-ADSiteReplicationTree
+Export-ModuleMember Get-ADSiteReplicationDiagram
+Export-ModuleMember Get-DomainFromDN
+Export-ModuleMember Get-ForestDomains
+Export-ModuleMember Get-ObjectDomain
