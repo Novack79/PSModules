@@ -705,6 +705,26 @@ function Get-DuplicateUserAccount {
 
 }
 
+function Get-ADObjectACL {
+    [CmdletBinding()]
+    Param (
+    [parameter(Mandatory=$true,ValueFromPipeline=$true)]
+    [object] $ADObject,
+    [parameter(Mandatory=$true)]
+    [object] $ADDomain
+    )
+
+    # Create a new PSDrive to the domain where the object is so we can use the Get-ACL command on it
+    New-PSDrive -Name ADACL -PSProvider ActiveDirectory -Server $ADDomain.DNSDomain -root "//RootDSE/"
+    
+    $ACL = Get-Acl "ADACL:$($ADObject.DistinguishedName)"
+
+    Remove-PSDrive -Name ADACL
+
+    return $ACL
+
+}
+
 Export-ModuleMember Get-ADGroupEnabledCount
 Export-ModuleMember Get-AllADGroups
 Export-ModuleMember Get-NestedGroups
@@ -723,3 +743,4 @@ Export-ModuleMember Get-DomainFromDN
 Export-ModuleMember Get-ForestDomains
 Export-ModuleMember Get-ObjectDomain
 Export-ModuleMember Get-DuplicateUserAccount
+Export-ModuleMember Get-ADObjectACL
