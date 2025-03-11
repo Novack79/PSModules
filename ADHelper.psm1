@@ -668,6 +668,33 @@ function Get-ObjectDomain {
     return($ADObject.DistinguishedName | Get-DomainFromDN)
 }
 
+function Get-DuplicateUserAccount {
+    [CmdletBinding()]
+    Param (
+        [parameter(Mandatory=$true,ValueFromPipeline=$true)]
+        [object] $ADDomains,
+        [parameter(Mandatory=$true)]
+        [object] $sAMAccountName
+    )
+
+    $UserFound = $False
+    $Duplicate = $False
+
+    foreach($Domain in $ADDomains)
+    {
+        $User = $(try {Get-ADUser -Identity $sAMAccountName -Server $Domain.DomainControllerFQDN -ErrorAction Continue} catch {$null})
+        if($User -ne $null)
+        {
+            if($UserFound) {$Duplicate = $True}
+            else {$UserFound = $True}
+
+        }
+    }
+            
+    return $Duplicate
+
+}
+
 Export-ModuleMember Get-ADGroupEnabledCount
 Export-ModuleMember Get-AllADGroups
 Export-ModuleMember Get-NestedGroups
@@ -685,3 +712,4 @@ Export-ModuleMember Get-ADSiteReplicationDiagram
 Export-ModuleMember Get-DomainFromDN
 Export-ModuleMember Get-ForestDomains
 Export-ModuleMember Get-ObjectDomain
+Export-ModuleMember Get-DuplicateUserAccount
