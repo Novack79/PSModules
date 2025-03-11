@@ -651,9 +651,19 @@ function Get-DomainFromDN {
     # Remove the trailing comma
     $DomainDN = $DomainDN.Substring(0,$DomainDN.Length -1)
 
-    $Domain = Get-ADDomain -Identity $DomainDN
+    $Domains = Get-ForestDomains
 
-    return $Domain
+    $DNFound = $false
+
+    foreach($Domain in $Domains)
+    {
+        if($Domain.DistinguishedName -eq $DomainDN)
+        {
+            return $Domain
+        }
+    }
+
+    if($DNFound -eq $false) { throw [System.ArgumentException] "$DomainDN Domain Partition Not Found" }
 
 }
 
