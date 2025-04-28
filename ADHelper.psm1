@@ -280,10 +280,17 @@ function Get-GPLinks
     [CmdletBinding()]
     Param (
     [parameter(Mandatory=$true,ValueFromPipeline=$true)]
-    [string] $DistinguishedName
+    [string] $DistinguishedName,
+    [parameter(Mandatory=$false)]
+    [string] $Server
     )
 
-    $arrReturn = Get-GPInheritance $DistinguishedName | Select -ExpandProperty GPOLinks
+    if($Server -ne $null)
+    {
+        $arrReturn = Get-GPInheritance $DistinguishedName -Server $Server | Select -ExpandProperty GPOLinks
+    } else {
+        $arrReturn = Get-GPInheritance $DistinguishedName | Select -ExpandProperty GPOLinks
+    }
 
     return $arrReturn
 
