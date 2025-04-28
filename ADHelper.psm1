@@ -282,12 +282,12 @@ function Get-GPLinks
     [parameter(Mandatory=$true,ValueFromPipeline=$true)]
     [string] $DistinguishedName,
     [parameter(Mandatory=$false)]
-    [string] $Server
+    [string] $Domain
     )
 
-    if($Server -ne $null)
+    if($Domain -ne $null)
     {
-        $arrReturn = Get-GPInheritance $DistinguishedName -Server $Server | Select -ExpandProperty GPOLinks
+        $arrReturn = Get-GPInheritance $DistinguishedName -Server $Domain.DomainControllerFQDN -Domain $Domain.DNSDomain | Select -ExpandProperty GPOLinks
     } else {
         $arrReturn = Get-GPInheritance $DistinguishedName | Select -ExpandProperty GPOLinks
     }
